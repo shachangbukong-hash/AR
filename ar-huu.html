@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>高崎駅 AR案内（サポート写真＋案内文付き）</title>
+<title>高崎駅 AR案内（距離表示付き）</title>
 <style>
 body { margin:0; overflow:hidden; font-family:"Segoe UI",sans-serif; color:white; text-align:center; }
 video#camera, #bgImage { position: fixed; top:0; left:0; width:100vw; height:100vh; object-fit:cover; z-index:0; }
@@ -17,6 +17,7 @@ button { background:#2196f3; color:white; border:none; padding:6px 12px; border-
 button:hover { background:#0b7dda; }
 #hintPhoto { position:fixed; top:10px; right:10px; width:100px; height:80px; border:2px solid white; border-radius:6px; display:none; z-index:4; cursor:pointer; }
 #hintText { position:fixed; top:95px; right:10px; font-size:12px; color:white; background: rgba(0,0,0,0.5); padding:2px 5px; border-radius:4px; display:none; z-index:4; pointer-events:none; }
+#distanceBox { position:fixed; bottom:10px; right:10px; background:rgba(0,0,0,0.6); padding:6px 10px; border-radius:6px; font-size:16px; z-index:5; }
 </style>
 </head>
 <body>
@@ -38,6 +39,7 @@ button:hover { background:#0b7dda; }
 
 <img id="hintPhoto" src="https://upload.wikimedia.org/wikipedia/commons/thumb/e/e8/Takasaki_Station_concourse.jpg/200px-Takasaki_Station_concourse.jpg" alt="サポート写真">
 <div id="hintText">この場所付近に来たらクリック</div>
+<div id="distanceBox">距離測定中...</div>
 
 <div id="overlay">
   <div id="arrow">🗺️</div>
@@ -45,35 +47,45 @@ button:hover { background:#0b7dda; }
 </div>
 
 <script>
-// ルートデータ（hint:true のステップで右上写真表示）
+// ==== 距離計算関数 ====
+function calcDistance(lat1, lon1, lat2, lon2) {
+  const R = 6371000;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLon/2)**2;
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  return R * c;
+}
+
+// ==== ルートデータ ====
 const routes = {
   "7番線→上信電鉄": [
-    { text:"7番線ホームを出発", arrow:"⬆️", hint:true },
-    { text:"コンコースを左へ", arrow:"⬅️", hint:true },
-    { text:"上信電鉄改札に到着", arrow:"✅", hint:false }
+    { text:"7番線ホームを出発", arrow:"⬆️", hint:true, lat:36.322, lon:139.012 },
+    { text:"コンコースを左へ", arrow:"⬅️", hint:true, lat:36.3219, lon:139.0118 },
+    { text:"上信電鉄改札に到着", arrow:"✅", hint:false, lat:36.3218, lon:139.0115 }
   ],
   "上信電鉄→6番線": [
-    { text:"上信電鉄改札を出る", arrow:"⬆️", hint:true },
-    { text:"左に進む", arrow:"⬅️", hint:true },
-    { text:"在来線改札を通過", arrow:"🚉", hint:false },
-    { text:"6番線ホームに到着", arrow:"✅", hint:false }
+    { text:"上信電鉄改札を出る", arrow:"⬆️", hint:true, lat:36.3218, lon:139.0115 },
+    { text:"左に進む", arrow:"⬅️", hint:true, lat:36.3219, lon:139.0118 },
+    { text:"在来線改札を通過", arrow:"🚉", hint:false, lat:36.322, lon:139.012 },
+    { text:"6番線ホームに到着", arrow:"✅", hint:false, lat:36.3221, lon:139.0123 }
   ],
   "西口→4番線": [
-    { text:"西口を出発", arrow:"⬆️", hint:true },
-    { text:"右へ進む", arrow:"➡️", hint:true },
-    { text:"4番線ホームに到着", arrow:"✅", hint:false }
+    { text:"西口を出発", arrow:"⬆️", hint:true, lat:36.3215, lon:139.010 },
+    { text:"右へ進む", arrow:"➡️", hint:true, lat:36.3217, lon:139.011 },
+    { text:"4番線ホームに到着", arrow:"✅", hint:false, lat:36.3219, lon:139.012 }
   ],
   "東口→高崎OPA": [
-    { text:"東口ロータリーを出発", arrow:"⬆️", hint:true },
-    { text:"横断歩道を渡る", arrow:"➡️", hint:true },
-    { text:"高崎OPA正面入口に到着", arrow:"✅", hint:false }
+    { text:"東口ロータリーを出発", arrow:"⬆️", hint:true, lat:36.3218, lon:139.0128 },
+    { text:"横断歩道を渡る", arrow:"➡️", hint:true, lat:36.3219, lon:139.0131 },
+    { text:"高崎OPA正面入口に到着", arrow:"✅", hint:false, lat:36.322, lon:139.0133 }
   ]
 };
 
 let currentRoute = [];
 let currentStep = 0;
 
-// カメラ起動
+// ==== カメラ起動 ====
 (async()=>{
   try{
     const stream = await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:"environment"}}});
@@ -83,7 +95,22 @@ let currentStep = 0;
   }
 })();
 
-// ステップ表示
+// ==== 現在位置追跡 ====
+navigator.geolocation.watchPosition(pos=>{
+  const lat = pos.coords.latitude;
+  const lon = pos.coords.longitude;
+  if(currentRoute.length>0){
+    const goal = currentRoute[currentStep];
+    const d = calcDistance(lat, lon, goal.lat, goal.lon);
+    document.getElementById("distanceBox").textContent = `あと約 ${Math.round(d)} m`;
+  } else {
+    document.getElementById("distanceBox").textContent = "距離測定中...";
+  }
+}, err=>{
+  document.getElementById("distanceBox").textContent = "位置情報が取得できません";
+});
+
+// ==== ステップ表示 ====
 function showStep(){
   if(currentRoute.length===0) return;
   const s = currentRoute[currentStep];
@@ -101,7 +128,7 @@ function showStep(){
   }
 }
 
-// ルート開始
+// ==== ルート開始 ====
 function startRoute(){
   const name = document.getElementById("routeSelect").value;
   if(!name) return alert("ルートを選択してください");
@@ -110,7 +137,7 @@ function startRoute(){
   showStep();
 }
 
-// リセット
+// ==== リセット ====
 function resetRoute(){
   currentRoute = [];
   currentStep = 0;
@@ -118,9 +145,10 @@ function resetRoute(){
   document.getElementById("textBox").textContent = "ルートを選択してください";
   document.getElementById("hintPhoto").style.display = "none";
   document.getElementById("hintText").style.display = "none";
+  document.getElementById("distanceBox").textContent = "距離測定中...";
 }
 
-// 画面クリックで次ステップ
+// ==== クリックで次ステップ ====
 document.getElementById("overlay").addEventListener("click",()=>{
   if(currentRoute.length===0) return;
   if(currentStep < currentRoute.length-1){
@@ -131,7 +159,7 @@ document.getElementById("overlay").addEventListener("click",()=>{
   }
 });
 
-// ヒント写真クリックでも次ステップ
+// ==== 写真クリックでも進行 ====
 document.getElementById("hintPhoto").addEventListener("click",()=>{
   if(currentRoute.length===0) return;
   if(currentStep < currentRoute.length-1){
