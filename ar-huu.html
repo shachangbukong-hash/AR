@@ -1,174 +1,148 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>高崎駅 AR案内（距離表示付き）</title>
-<style>
-body { margin:0; overflow:hidden; font-family:"Segoe UI",sans-serif; color:white; text-align:center; }
-video#camera, #bgImage { position: fixed; top:0; left:0; width:100vw; height:100vh; object-fit:cover; z-index:0; }
-#bgImage { background: url("https://upload.wikimedia.org/wikipedia/commons/3/3f/Takasaki_Station_concourse.jpg") center/cover; opacity:0.35; z-index:1; }
-#overlay { position: fixed; top:0; left:0; width:100%; height:100%; display:flex; flex-direction:column; justify-content:center; align-items:center; z-index:2; cursor:pointer; }
-#arrow { font-size:100px; animation:pulse 1.2s infinite; }
-@keyframes pulse { 0%{opacity:0.7; transform:scale(1);}50%{opacity:1; transform:scale(1.2);}100%{opacity:0.7; transform:scale(1);} }
-#textBox { background: rgba(0,0,0,0.6); padding:10px 20px; border-radius:10px; font-size:20px; margin-top:10px; }
-#menu { position:fixed; top:10px; left:50%; transform:translateX(-50%); z-index:3; background: rgba(30,30,30,0.8); padding:10px; border-radius:10px; display:flex; gap:8px; align-items:center; }
-button { background:#2196f3; color:white; border:none; padding:6px 12px; border-radius:6px; cursor:pointer; }
-button:hover { background:#0b7dda; }
-#hintPhoto { position:fixed; top:10px; right:10px; width:100px; height:80px; border:2px solid white; border-radius:6px; display:none; z-index:4; cursor:pointer; }
-#hintText { position:fixed; top:95px; right:10px; font-size:12px; color:white; background: rgba(0,0,0,0.5); padding:2px 5px; border-radius:4px; display:none; z-index:4; pointer-events:none; }
-#distanceBox { position:fixed; bottom:10px; right:10px; background:rgba(0,0,0,0.6); padding:6px 10px; border-radius:6px; font-size:16px; z-index:5; }
-</style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AR案内・類似度バー付き完成形</title>
+  <style>
+    body, html { margin: 0; padding: 0; overflow: hidden; background: #000; font-family: sans-serif; color: white; }
+    #cameraView { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; object-fit: cover; z-index: 1; }
+
+    #routeSelectBox {
+      position: fixed;
+      top: 10px;
+      left: 10px;
+      background: rgba(0,0,0,0.6);
+      padding: 10px;
+      border-radius: 8px;
+      z-index: 20;
+    }
+    #routeSelect {
+      font-size: 16px;
+      padding: 6px;
+    }
+
+    #backBtn {
+      margin-top: 6px;
+      width: 100%;
+      padding: 6px;
+      border: none;
+      border-radius: 6px;
+      background: #444;
+      color: white;
+      font-size: 14px;
+    }
+
+    #guideBox { position: fixed; bottom: 0; width: 100%; background: rgba(0,0,0,0.55); padding: 14px; font-size: 20px; text-align: center; z-index: 10; }
+    #supportArea { position: fixed; right: 10px; top: 80px; width: 160px; background: rgba(0,0,0,0.5); padding: 8px; border-radius: 8px; z-index: 20; text-align: center; }
+    #supportImg { width: 100%; border-radius: 6px; }
+    #simText { font-size: 12px; margin-top: 4px; }
+    #simBarBase { width: 100%; height: 6px; background: #444; border-radius: 5px; margin-top: 4px; }
+    #simBarFill { width: 0%; height: 100%; background: #00ff99; border-radius: 5px; }
+    #stepInfo { font-size: 12px; opacity: 0.9; margin-top: 6px; }
+  </style>
 </head>
 <body>
+  <video id="cameraView" autoplay playsinline></video>
 
-<video id="camera" autoplay playsinline muted></video>
-<div id="bgImage"></div>
+  <div id="routeSelectBox">
+    <select id="routeSelect">
+      <option value="0">在来線7番線 → 上信電鉄</option>
+      <option value="1">西口 → 在来線4番線</option>
+    </select>
+    <button id="backBtn">◀ 戻る</button>
+  </div>
 
-<div id="menu">
-  <select id="routeSelect">
-    <option value="">ルートを選択</option>
-    <option value="7番線→上信電鉄">在来線7番線 → 上信電鉄</option>
-    <option value="上信電鉄→6番線">上信電鉄 → 在来線6番線</option>
-    <option value="西口→4番線">西口 → 在来線4番線</option>
-    <option value="東口→高崎OPA">東口 → 高崎OPA</option>
-  </select>
-  <button onclick="startRoute()">案内開始</button>
-  <button onclick="resetRoute()">リセット</button>
-</div>
+  <div id="supportArea">
+    <img id="supportImg" src="step1.jpg" />
+    <div id="simText">一致度: 0%</div>
+    <div id="simBarBase"><div id="simBarFill"></div></div>
+    <div id="stepInfo">この場所付近に来たらクリック</div>
+  </div>
 
-<img id="hintPhoto" src="https://upload.wikimedia.org/wikipedia/commons/thumb/e/e8/Takasaki_Station_concourse.jpg/200px-Takasaki_Station_concourse.jpg" alt="サポート写真">
-<div id="hintText">この場所付近に来たらクリック</div>
-<div id="distanceBox">距離測定中...</div>
+  <div id="guideBox">案内を読み込み中...</div>
 
-<div id="overlay">
-  <div id="arrow">🗺️</div>
-  <div id="textBox">ルートを選択してください</div>
-</div>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.10.0"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/mobilenet@2.1.0"></script>
 
-<script>
-// ==== 距離計算関数 ====
-function calcDistance(lat1, lon1, lat2, lon2) {
-  const R = 6371000;
-  const dLat = (lat2 - lat1) * Math.PI / 180;
-  const dLon = (lon2 - lon1) * Math.PI / 180;
-  const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLon/2)**2;
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-  return R * c;
-}
+  <script>
+    const guideBox = document.getElementById("guideBox");
+    const supportImg = document.getElementById("supportImg");
+    const simText = document.getElementById("simText");
+    const simBarFill = document.getElementById("simBarFill");
+    const video = document.getElementById("cameraView");
+    const routeSelect = document.getElementById("routeSelect");
+    const backBtn = document.getElementById("backBtn");
 
-// ==== ルートデータ ====
-const routes = {
-  "7番線→上信電鉄": [
-    { text:"7番線ホームを出発", arrow:"⬆️", hint:true, lat:36.322, lon:139.012 },
-    { text:"コンコースを左へ", arrow:"⬅️", hint:true, lat:36.3219, lon:139.0118 },
-    { text:"上信電鉄改札に到着", arrow:"✅", hint:false, lat:36.3218, lon:139.0115 }
-  ],
-  "上信電鉄→6番線": [
-    { text:"上信電鉄改札を出る", arrow:"⬆️", hint:true, lat:36.3218, lon:139.0115 },
-    { text:"左に進む", arrow:"⬅️", hint:true, lat:36.3219, lon:139.0118 },
-    { text:"在来線改札を通過", arrow:"🚉", hint:false, lat:36.322, lon:139.012 },
-    { text:"6番線ホームに到着", arrow:"✅", hint:false, lat:36.3221, lon:139.0123 }
-  ],
-  "西口→4番線": [
-    { text:"西口を出発", arrow:"⬆️", hint:true, lat:36.3215, lon:139.010 },
-    { text:"右へ進む", arrow:"➡️", hint:true, lat:36.3217, lon:139.011 },
-    { text:"4番線ホームに到着", arrow:"✅", hint:false, lat:36.3219, lon:139.012 }
-  ],
-  "東口→高崎OPA": [
-    { text:"東口ロータリーを出発", arrow:"⬆️", hint:true, lat:36.3218, lon:139.0128 },
-    { text:"横断歩道を渡る", arrow:"➡️", hint:true, lat:36.3219, lon:139.0131 },
-    { text:"高崎OPA正面入口に到着", arrow:"✅", hint:false, lat:36.322, lon:139.0133 }
-  ]
-};
+    let model;
+    let step = 0;
 
-let currentRoute = [];
-let currentStep = 0;
+    const routes = [
+      { name: "在来線7番線 → 上信電鉄", steps: [ { text: "7番線を出る", img: "step1.jpg" }, { text: "通路を直進", img: "step2.jpg" }, { text: "上信電鉄入口へ", img: "step3.jpg" } ] },
+      { name: "西口 → 在来線4番線", steps: [ { text: "西口から直進", img: "step4.jpg" }, { text: "分岐点を右へ", img: "step5.jpg" }, { text: "4番線ホームへ", img: "step6.jpg" } ] }
+    ];
 
-// ==== カメラ起動 ====
-(async()=>{
-  try{
-    const stream = await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:"environment"}}});
-    document.getElementById("camera").srcObject = stream;
-  } catch(e){
-    alert("カメラを起動できません: "+e.message);
-  }
-})();
+    let currentRoute = 0;
 
-// ==== 現在位置追跡 ====
-navigator.geolocation.watchPosition(pos=>{
-  const lat = pos.coords.latitude;
-  const lon = pos.coords.longitude;
-  if(currentRoute.length>0){
-    const goal = currentRoute[currentStep];
-    const d = calcDistance(lat, lon, goal.lat, goal.lon);
-    document.getElementById("distanceBox").textContent = `あと約 ${Math.round(d)} m`;
-  } else {
-    document.getElementById("distanceBox").textContent = "距離測定中...";
-  }
-}, err=>{
-  document.getElementById("distanceBox").textContent = "位置情報が取得できません";
-});
+    async function startCamera() {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+      video.srcObject = stream;
+    }
 
-// ==== ステップ表示 ====
-function showStep(){
-  if(currentRoute.length===0) return;
-  const s = currentRoute[currentStep];
-  document.getElementById("arrow").textContent = s.arrow;
-  document.getElementById("textBox").textContent = s.text;
+    function updateStep() {
+      const s = routes[currentRoute].steps[step];
+      guideBox.textContent = s.text;
+      supportImg.src = s.img;
+    }
 
-  const hintPhoto = document.getElementById("hintPhoto");
-  const hintText = document.getElementById("hintText");
-  if(s.hint){
-    hintPhoto.style.display = "block";
-    hintText.style.display = "block";
-  } else {
-    hintPhoto.style.display = "none";
-    hintText.style.display = "none";
-  }
-}
+    async function compare() {
+      if (!model) return;
+      const camTensor = tf.browser.fromPixels(video).resizeBilinear([224,224]).toFloat().expandDims();
+      const supportImageElement = new Image(); supportImageElement.src = supportImg.src;
+      await new Promise(res => supportImageElement.onload = res);
+      const supTensor = tf.browser.fromPixels(supportImageElement).resizeBilinear([224,224]).toFloat().expandDims();
+      const camFeat = model.infer(camTensor);
+      const supFeat = model.infer(supTensor);
+      const sim = tf.losses.cosineDistance(camFeat, supFeat, 1).dataSync()[0];
+      const similarity = Math.max(0, 1 - sim);
+      const percent = Math.round(similarity * 100);
+      simText.textContent = `一致度: ${percent}%`;
+      simBarFill.style.width = `${percent}%`;
+      if (percent >= 50) nextStep();
+    }
 
-// ==== ルート開始 ====
-function startRoute(){
-  const name = document.getElementById("routeSelect").value;
-  if(!name) return alert("ルートを選択してください");
-  currentRoute = routes[name];
-  currentStep = 0;
-  showStep();
-}
+    function nextStep() {
+      step++;
+      if (step >= routes[currentRoute].steps.length) { guideBox.textContent = "案内終了"; return; }
+      updateStep();
+    }
 
-// ==== リセット ====
-function resetRoute(){
-  currentRoute = [];
-  currentStep = 0;
-  document.getElementById("arrow").textContent = "🗺️";
-  document.getElementById("textBox").textContent = "ルートを選択してください";
-  document.getElementById("hintPhoto").style.display = "none";
-  document.getElementById("hintText").style.display = "none";
-  document.getElementById("distanceBox").textContent = "距離測定中...";
-}
+    function prevStep() {
+      if (step > 0) step--;
+      updateStep();
+    }
 
-// ==== クリックで次ステップ ====
-document.getElementById("overlay").addEventListener("click",()=>{
-  if(currentRoute.length===0) return;
-  if(currentStep < currentRoute.length-1){
-    currentStep++;
-    showStep();
-  } else {
-    alert("案内完了！");
-  }
-});
+    document.body.addEventListener("click", nextStep);
 
-// ==== 写真クリックでも進行 ====
-document.getElementById("hintPhoto").addEventListener("click",()=>{
-  if(currentRoute.length===0) return;
-  if(currentStep < currentRoute.length-1){
-    currentStep++;
-    showStep();
-  } else {
-    alert("案内完了！");
-  }
-});
-</script>
+    routeSelect.addEventListener("change", () => {
+      currentRoute = parseInt(routeSelect.value);
+      step = 0;
+      updateStep();
+    });
+
+    backBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      prevStep();
+    });
+
+    async function init() {
+      await startCamera();
+      model = await mobilenet.load();
+      updateStep();
+      setInterval(compare, 1500);
+    }
+
+    init();
+  </script>
 </body>
 </html>
