@@ -32,7 +32,7 @@
   #similarityBarContainer { position:fixed; top:110px; right:12px; width:160px; height:14px; background:#222; border-radius:8px; z-index:11; overflow:hidden; }
   #similarityBar { width:0%; height:100%; background:red; transition:width 220ms linear, background 120ms; }
 
-  #arrowOverlay { position:fixed; bottom:160px; left:50%; transform:translateX(-50%); width:140px; z-index:11; display:none; }
+  #arrowOverlay { position:fixed; bottom:160px; left:50%; transform:translateX(-50%); width:140px; z-index:11; display:block; }
   #textOverlay { position:fixed; bottom:36px; left:0; right:0; text-align:center; font-size:20px; text-shadow:0 0 8px #000; z-index:11; }
 
   /* hidden helpers */
@@ -425,4 +425,5 @@ window.addEventListener('load', ()=>{ initAR(); });
 </script>
 </body>
 </html>
+
 
